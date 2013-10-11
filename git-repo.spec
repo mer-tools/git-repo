@@ -15,6 +15,8 @@ Group:      Tools
 License:    Apache 2.0
 Source0:    git-repo-1.12.4.tar.gz
 Source100:  git-repo.yaml
+Requires:   python
+Requires:   git
 
 %description
 git-repo for Mer
