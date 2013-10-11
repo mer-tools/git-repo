@@ -1,0 +1,18 @@
+Name: git-repo
+Summary: Repo helps manage many Git repositories
+Description: |
+  git-repo for Mer
+
+  The upstream tarball is based off of these upstream Google repos:
+    git clone https://android.googlesource.com/tools/repo
+Group: Tools
+License: Apache 2.0
+Version: 1.12.4
+Sources:
+  - git-repo-1.12.4.tar.gz
+Builder: none
+Configure: none
+Files:
+  - '%{_bindir}/repo'
+SetupOptions: -q -n src
+Patches: []
