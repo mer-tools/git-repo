@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -18,9 +19,11 @@ import re
 import sys
 from formatter import AbstractFormatter, DumbWriter
 
+from subcmds import all_commands
 from color import Coloring
 from command import PagedCommand, MirrorSafeCommand, GitcAvailableCommand, GitcClientCommand
 import gitc_utils
+
 
 class Help(PagedCommand, MirrorSafeCommand):
   common = False
@@ -32,23 +35,26 @@ class Help(PagedCommand, MirrorSafeCommand):
 Displays detailed usage information about a command.
 """
 
-  def _PrintAllCommands(self):
-    print('usage: repo COMMAND [ARGS]')
-    print('The complete list of recognized repo commands are:')
-    commandNames = list(sorted(self.commands))
-
+  def _PrintCommands(self, commandNames):
+    """Helper to display |commandNames| summaries."""
     maxlen = 0
     for name in commandNames:
       maxlen = max(maxlen, len(name))
     fmt = '  %%-%ds  %%s' % maxlen
 
     for name in commandNames:
-      command = self.commands[name]
+      command = all_commands[name]()
       try:
         summary = command.helpSummary.strip()
       except AttributeError:
         summary = ''
       print(fmt % (name, summary))
+
+  def _PrintAllCommands(self):
+    print('usage: repo COMMAND [ARGS]')
+    print('The complete list of recognized repo commands are:')
+    commandNames = list(sorted(all_commands))
+    self._PrintCommands(commandNames)
     print("See 'repo help <command>' for more information on a "
           'specific command.')
 
@@ -68,26 +74,15 @@ Displays detailed usage information about a command.
       return False
 
     commandNames = list(sorted([name
-                    for name, command in self.commands.items()
-                    if command.common and gitc_supported(command)]))
+                                for name, command in all_commands.items()
+                                if command.common and gitc_supported(command)]))
+    self._PrintCommands(commandNames)
 
-    maxlen = 0
-    for name in commandNames:
-      maxlen = max(maxlen, len(name))
-    fmt = '  %%-%ds  %%s' % maxlen
-
-    for name in commandNames:
-      command = self.commands[name]
-      try:
-        summary = command.helpSummary.strip()
-      except AttributeError:
-        summary = ''
-      print(fmt % (name, summary))
     print(
-"See 'repo help <command>' for more information on a specific command.\n"
-"See 'repo help --all' for a complete list of recognized commands.")
+        "See 'repo help <command>' for more information on a specific command.\n"
+        "See 'repo help --all' for a complete list of recognized commands.")
 
-  def _PrintCommandHelp(self, cmd):
+  def _PrintCommandHelp(self, cmd, header_prefix=''):
     class _Out(Coloring):
       def __init__(self, gc):
         Coloring.__init__(self, gc, 'help')
@@ -105,17 +100,15 @@ Displays detailed usage information about a command.
 
         self.nl()
 
-        self.heading('%s', heading)
+        self.heading('%s%s', header_prefix, heading)
         self.nl()
-
-        self.heading('%s', ''.ljust(len(heading), '-'))
         self.nl()
 
         me = 'repo %s' % cmd.NAME
         body = body.strip()
         body = body.replace('%prog', me)
 
-        asciidoc_hdr = re.compile(r'^\n?([^\n]{1,})\n([=~-]{2,})$')
+        asciidoc_hdr = re.compile(r'^\n?#+ (.+)$')
         for para in body.split("\n\n"):
           if para.startswith(' '):
             self.write('%s', para)
@@ -125,19 +118,8 @@ Displays detailed usage information about a command.
 
           m = asciidoc_hdr.match(para)
           if m:
-            title = m.group(1)
-            section_type = m.group(2)
-            if section_type[0] in ('=', '-'):
-              p = self.heading
-            else:
-              def _p(fmt, *args):
-                self.write('  ')
-                self.heading(fmt, *args)
-              p = _p
-
-            p('%s', title)
+            self.heading('%s%s', header_prefix, m.group(1))
             self.nl()
-            p('%s', ''.ljust(len(title), section_type[0]))
             self.nl()
             continue
 
@@ -150,14 +132,25 @@ Displays detailed usage information about a command.
     cmd.OptionParser.print_help()
     out._PrintSection('Description', 'helpDescription')
 
+  def _PrintAllCommandHelp(self):
+    for name in sorted(all_commands):
+      cmd = all_commands[name]()
+      cmd.manifest = self.manifest
+      self._PrintCommandHelp(cmd, header_prefix='[%s] ' % (name,))
+
   def _Options(self, p):
     p.add_option('-a', '--all',
                  dest='show_all', action='store_true',
                  help='show the complete list of commands')
+    p.add_option('--help-all',
+                 dest='show_all_help', action='store_true',
+                 help='show the --help of all commands')
 
   def Execute(self, opt, args):
     if len(args) == 0:
-      if opt.show_all:
+      if opt.show_all_help:
+        self._PrintAllCommandHelp()
+      elif opt.show_all:
         self._PrintAllCommands()
       else:
         self._PrintCommonCommands()
@@ -166,7 +159,7 @@ Displays detailed usage information about a command.
       name = args[0]
 
       try:
-        cmd = self.commands[name]
+        cmd = all_commands[name]()
       except KeyError:
         print("repo: '%s' is not a repo command." % name, file=sys.stderr)
         sys.exit(1)

@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2010 The Android Open Source Project
 #
@@ -14,6 +15,7 @@
 # limitations under the License.
 
 from subcmds.sync import Sync
+
 
 class Smartsync(Sync):
   common = True

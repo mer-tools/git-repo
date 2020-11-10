@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -22,17 +23,17 @@ from command import InteractiveCommand
 from editor import Editor
 from error import HookError, UploadError
 from git_command import GitCommand
+from git_refs import R_HEADS
 from project import RepoHook
 
 from pyversion import is_python3
-# pylint:disable=W0622
 if not is_python3():
-  input = raw_input
+  input = raw_input  # noqa: F821
 else:
   unicode = str
-# pylint:enable=W0622
 
 UNUSUAL_COMMIT_THRESHOLD = 5
+
 
 def _ConfirmManyUploads(multiple_branches=False):
   if multiple_branches:
@@ -45,16 +46,19 @@ def _ConfirmManyUploads(multiple_branches=False):
   answer = input("If you are sure you intend to do this, type 'yes': ").strip()
   return answer == "yes"
 
+
 def _die(fmt, *args):
   msg = fmt % args
   print('error: %s' % msg, file=sys.stderr)
   sys.exit(1)
+
 
 def _SplitEmails(values):
   result = []
   for value in values:
     result.extend([s.strip() for s in value.split(',')])
   return result
+
 
 class Upload(InteractiveCommand):
   common = True
@@ -80,8 +84,7 @@ added to the respective list of users, and emails are sent to any
 new users.  Users passed as --reviewers must already be registered
 with the code review system, or the upload will fail.
 
-Configuration
--------------
+# Configuration
 
 review.URL.autoupload:
 
@@ -128,10 +131,26 @@ is set to "true" then repo will assume you always want the equivalent
 of the -t option to the repo command. If unset or set to "false" then
 repo will make use of only the command line option.
 
-References
-----------
+review.URL.uploadhashtags:
 
-Gerrit Code Review:  http://code.google.com/p/gerrit/
+To add hashtags whenever uploading a commit, you can set a per-project
+or global Git option to do so. The value of review.URL.uploadhashtags
+will be used as comma delimited hashtags like the --hashtag option.
+
+review.URL.uploadlabels:
+
+To add labels whenever uploading a commit, you can set a per-project
+or global Git option to do so. The value of review.URL.uploadlabels
+will be used as comma delimited labels like the --label option.
+
+review.URL.uploadnotify:
+
+Control e-mail notifications when uploading.
+https://gerrit-review.googlesource.com/Documentation/user-upload.html#notify
+
+# References
+
+Gerrit Code Review:  https://www.gerritcodereview.com/
 
 """
 
@@ -139,25 +158,53 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
     p.add_option('-t',
                  dest='auto_topic', action='store_true',
                  help='Send local branch name to Gerrit Code Review')
+    p.add_option('--hashtag', '--ht',
+                 dest='hashtags', action='append', default=[],
+                 help='Add hashtags (comma delimited) to the review.')
+    p.add_option('--hashtag-branch', '--htb',
+                 action='store_true',
+                 help='Add local branch name as a hashtag.')
+    p.add_option('-l', '--label',
+                 dest='labels', action='append', default=[],
+                 help='Add a label when uploading.')
     p.add_option('--re', '--reviewers',
-                 type='string',  action='append', dest='reviewers',
+                 type='string', action='append', dest='reviewers',
                  help='Request reviews from these people.')
     p.add_option('--cc',
-                 type='string',  action='append', dest='cc',
+                 type='string', action='append', dest='cc',
                  help='Also send email to these email addresses.')
     p.add_option('--br',
-                 type='string',  action='store', dest='branch',
+                 type='string', action='store', dest='branch',
                  help='Branch to upload.')
     p.add_option('--cbr', '--current-branch',
                  dest='current_branch', action='store_true',
                  help='Upload current git branch.')
-    p.add_option('-d', '--draft',
-                 action='store_true', dest='draft', default=False,
-                 help='If specified, upload as a draft.')
+    p.add_option('--ne', '--no-emails',
+                 action='store_false', dest='notify', default=True,
+                 help='If specified, do not send emails on upload.')
+    p.add_option('-p', '--private',
+                 action='store_true', dest='private', default=False,
+                 help='If specified, upload as a private change.')
+    p.add_option('-w', '--wip',
+                 action='store_true', dest='wip', default=False,
+                 help='If specified, upload as a work-in-progress change.')
+    p.add_option('-o', '--push-option',
+                 type='string', action='append', dest='push_options',
+                 default=[],
+                 help='Additional push options to transmit')
     p.add_option('-D', '--destination', '--dest',
                  type='string', action='store', dest='dest_branch',
                  metavar='BRANCH',
                  help='Submit for review on this target branch.')
+    p.add_option('-n', '--dry-run',
+                 dest='dryrun', default=False, action='store_true',
+                 help='Do everything except actually upload the CL.')
+    p.add_option('-y', '--yes',
+                 default=False, action='store_true',
+                 help='Answer yes to all safe prompts.')
+    p.add_option('--no-cert-checks',
+                 dest='validate_certs', action='store_false', default=True,
+                 help='Disable verifying ssl certs (unsafe).')
 
     # Options relating to upload hook.  Note that verify and no-verify are NOT
     # opposites of each other, which is why they store to different locations.
@@ -175,12 +222,16 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
     #   Never run upload hooks, but upload anyway (AKA bypass hooks).
     # - no-verify=True, verify=True:
     #   Invalid
-    p.add_option('--no-verify',
+    g = p.add_option_group('Upload hooks')
+    g.add_option('--no-verify',
                  dest='bypass_hooks', action='store_true',
                  help='Do not run the upload hook.')
-    p.add_option('--verify',
+    g.add_option('--verify',
                  dest='allow_all_hooks', action='store_true',
                  help='Run the upload hook without prompting.')
+    g.add_option('--ignore-hooks',
+                 dest='ignore_hooks', action='store_true',
+                 help='Do not abort uploading if upload hooks fail.')
 
   def _SingleBranch(self, opt, branch, people):
     project = branch.project
@@ -198,18 +249,25 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
       commit_list = branch.commits
 
       destination = opt.dest_branch or project.dest_branch or project.revisionExpr
-      print('Upload project %s/ to remote branch %s:' % (project.relpath, destination))
+      print('Upload project %s/ to remote branch %s%s:' %
+            (project.relpath, destination, ' (private)' if opt.private else ''))
       print('  branch %s (%2d commit%s, %s):' % (
-                    name,
-                    len(commit_list),
-                    len(commit_list) != 1 and 's' or '',
-                    date))
+          name,
+          len(commit_list),
+          len(commit_list) != 1 and 's' or '',
+          date))
       for commit in commit_list:
         print('         %s' % commit)
 
-      sys.stdout.write('to %s (y/N)? ' % remote.review)
-      answer = sys.stdin.readline().strip().lower()
-      answer = answer in ('y', 'yes', '1', 'true', 't')
+      print('to %s (y/N)? ' % remote.review, end='')
+      # TODO: When we require Python 3, use flush=True w/print above.
+      sys.stdout.flush()
+      if opt.yes:
+        print('<--yes>')
+        answer = True
+      else:
+        answer = sys.stdin.readline().strip().lower()
+        answer = answer in ('y', 'yes', '1', 'true', 't')
 
     if answer:
       if len(branch.commits) > UNUSUAL_COMMIT_THRESHOLD:
@@ -254,11 +312,6 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
       projects[project.relpath] = project
       branches[project.name] = b
     script.append('')
-
-    script = [ x.encode('utf-8')
-             if issubclass(type(x), unicode)
-             else x
-             for x in script ]
 
     script = Editor.EditString("\n".join(script)).split("\n")
 
@@ -311,12 +364,12 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
 
     key = 'review.%s.autoreviewer' % project.GetBranch(name).remote.review
     raw_list = project.config.GetString(key)
-    if not raw_list is None:
+    if raw_list is not None:
       people[0].extend([entry.strip() for entry in raw_list.split(',')])
 
     key = 'review.%s.autocopy' % project.GetBranch(name).remote.review
     raw_list = project.config.GetString(key)
-    if not raw_list is None and len(people[0]) > 0:
+    if raw_list is not None and len(people[0]) > 0:
       people[1].extend([entry.strip() for entry in raw_list.split(',')])
 
   def _FindGerritChange(self, branch):
@@ -346,11 +399,18 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
 
           # if they want to auto upload, let's not ask because it could be automated
           if answer is None:
-            sys.stdout.write('Uncommitted changes in ' + branch.project.name)
-            sys.stdout.write(' (did you forget to amend?):\n')
-            sys.stdout.write('\n'.join(changes) + '\n')
-            sys.stdout.write('Continue uploading? (y/N) ')
-            a = sys.stdin.readline().strip().lower()
+            print()
+            print('Uncommitted changes in %s (did you forget to amend?):'
+                  % branch.project.name)
+            print('\n'.join(changes))
+            print('Continue uploading? (y/N) ', end='')
+            # TODO: When we require Python 3, use flush=True w/print above.
+            sys.stdout.flush()
+            if opt.yes:
+              print('<--yes>')
+              a = 'yes'
+            else:
+              a = sys.stdin.readline().strip().lower()
             if a not in ('y', 'yes', 't', 'true', 'on'):
               print("skipping upload", file=sys.stderr)
               branch.uploaded = False
@@ -362,12 +422,51 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
           key = 'review.%s.uploadtopic' % branch.project.remote.review
           opt.auto_topic = branch.project.config.GetBoolean(key)
 
+        def _ExpandCommaList(value):
+          """Split |value| up into comma delimited entries."""
+          if not value:
+            return
+          for ret in value.split(','):
+            ret = ret.strip()
+            if ret:
+              yield ret
+
+        # Check if hashtags should be included.
+        key = 'review.%s.uploadhashtags' % branch.project.remote.review
+        hashtags = set(_ExpandCommaList(branch.project.config.GetString(key)))
+        for tag in opt.hashtags:
+          hashtags.update(_ExpandCommaList(tag))
+        if opt.hashtag_branch:
+          hashtags.add(branch.name)
+
+        # Check if labels should be included.
+        key = 'review.%s.uploadlabels' % branch.project.remote.review
+        labels = set(_ExpandCommaList(branch.project.config.GetString(key)))
+        for label in opt.labels:
+          labels.update(_ExpandCommaList(label))
+        # Basic sanity check on label syntax.
+        for label in labels:
+          if not re.match(r'^.+[+-][0-9]+$', label):
+            print('repo: error: invalid label syntax "%s": labels use forms '
+                  'like CodeReview+1 or Verified-1' % (label,), file=sys.stderr)
+            sys.exit(1)
+
+        # Handle e-mail notifications.
+        if opt.notify is False:
+          notify = 'NONE'
+        else:
+          key = 'review.%s.uploadnotify' % branch.project.remote.review
+          notify = branch.project.config.GetString(key)
+
         destination = opt.dest_branch or branch.project.dest_branch
 
         # Make sure our local branch is not setup to track a different remote branch
         merge_branch = self._GetMergeBranch(branch.project)
         if destination:
-          full_dest = 'refs/heads/%s' % destination
+          full_dest = destination
+          if not full_dest.startswith(R_HEADS):
+            full_dest = R_HEADS + full_dest
+
           if not opt.dest_branch and merge_branch and merge_branch != full_dest:
             print('merge branch %s does not match destination branch %s'
                   % (merge_branch, full_dest))
@@ -377,7 +476,18 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
             branch.uploaded = False
             continue
 
-        branch.UploadForReview(people, auto_topic=opt.auto_topic, draft=opt.draft, dest_branch=destination)
+        branch.UploadForReview(people,
+                               dryrun=opt.dryrun,
+                               auto_topic=opt.auto_topic,
+                               hashtags=hashtags,
+                               labels=labels,
+                               private=opt.private,
+                               notify=notify,
+                               wip=opt.wip,
+                               dest_branch=destination,
+                               validate_certs=opt.validate_certs,
+                               push_options=opt.push_options)
+
         branch.uploaded = True
       except UploadError as e:
         branch.error = e
@@ -395,18 +505,18 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
           else:
             fmt = '\n       (%s)'
           print(('[FAILED] %-15s %-15s' + fmt) % (
-                 branch.project.relpath + '/', \
-                 branch.name, \
-                 str(branch.error)),
-                 file=sys.stderr)
+              branch.project.relpath + '/',
+              branch.name,
+              str(branch.error)),
+              file=sys.stderr)
       print()
 
     for branch in todo:
       if branch.uploaded:
         print('[OK    ] %-15s %s' % (
-               branch.project.relpath + '/',
-               branch.name),
-               file=sys.stderr)
+            branch.project.relpath + '/',
+            branch.name),
+            file=sys.stderr)
 
     if have_errors:
       sys.exit(1)
@@ -414,14 +524,14 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
   def _GetMergeBranch(self, project):
     p = GitCommand(project,
                    ['rev-parse', '--abbrev-ref', 'HEAD'],
-                   capture_stdout = True,
-                   capture_stderr = True)
+                   capture_stdout=True,
+                   capture_stderr=True)
     p.Wait()
     local_branch = p.stdout.strip()
     p = GitCommand(project,
                    ['config', '--get', 'branch.%s.merge' % local_branch],
-                   capture_stdout = True,
-                   capture_stderr = True)
+                   capture_stdout=True,
+                   capture_stderr=True)
     p.Wait()
     merge_branch = p.stdout.strip()
     return merge_branch
@@ -455,22 +565,38 @@ Gerrit Code Review:  http://code.google.com/p/gerrit/
         pending.append((project, avail))
 
     if not pending:
-      print("no branches ready for upload", file=sys.stderr)
-      return
+      if branch is None:
+        print('repo: error: no branches ready for upload', file=sys.stderr)
+      else:
+        print('repo: error: no branches named "%s" ready for upload' %
+              (branch,), file=sys.stderr)
+      return 1
 
     if not opt.bypass_hooks:
       hook = RepoHook('pre-upload', self.manifest.repo_hooks_project,
                       self.manifest.topdir,
                       self.manifest.manifestProject.GetRemote('origin').url,
                       abort_if_user_denies=True)
-      pending_proj_names = [project.name for (project, avail) in pending]
-      pending_worktrees = [project.worktree for (project, avail) in pending]
+      pending_proj_names = [project.name for (project, available) in pending]
+      pending_worktrees = [project.worktree for (project, available) in pending]
+      passed = True
       try:
         hook.Run(opt.allow_all_hooks, project_list=pending_proj_names,
                  worktree_list=pending_worktrees)
+      except SystemExit:
+        passed = False
+        if not opt.ignore_hooks:
+          raise
       except HookError as e:
+        passed = False
         print("ERROR: %s" % str(e), file=sys.stderr)
-        return
+
+      if not passed:
+        if opt.ignore_hooks:
+          print('\nWARNING: pre-upload hooks failed, but uploading anyways.',
+                file=sys.stderr)
+        else:
+          return
 
     if opt.reviewers:
       reviewers = _SplitEmails(opt.reviewers)

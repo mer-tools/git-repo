@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2009 The Android Open Source Project
 #
@@ -14,15 +15,21 @@
 # limitations under the License.
 
 from __future__ import print_function
+
 import sys
+
 from color import Coloring
 from command import PagedCommand
-from git_command import git_require, GitCommand
+from error import GitError
+from git_command import GitCommand
+
 
 class GrepColoring(Coloring):
   def __init__(self, config):
     Coloring.__init__(self, config, 'grep')
     self.project = self.printer('project', attr='bold')
+    self.fail = self.printer('fail', fg='red')
+
 
 class Grep(PagedCommand):
   common = True
@@ -33,8 +40,7 @@ class Grep(PagedCommand):
   helpDescription = """
 Search for the specified patterns in all project files.
 
-Boolean Options
----------------
+# Boolean Options
 
 The following options can appear as often as necessary to express
 the pattern to locate:
@@ -47,8 +53,7 @@ in order to scan multiple trees.  If the same file matches in more
 than one tree, only the first result is reported, prefixed by the
 revision name it was found under.
 
-Examples
--------
+# Examples
 
 Look for a line that has '#define' and either 'MAX_PATH or 'PATH_MAX':
 
@@ -153,12 +158,11 @@ contain a line that matches both expressions:
                  action='callback', callback=carry,
                  help='Show only file names not containing matching lines')
 
-
   def Execute(self, opt, args):
     out = GrepColoring(self.manifest.manifestProject.config)
 
     cmd_argv = ['grep']
-    if out.is_on and git_require((1, 6, 3)):
+    if out.is_on:
       cmd_argv.append('--color')
     cmd_argv.extend(getattr(opt, 'cmd_argv', []))
 
@@ -185,15 +189,25 @@ contain a line that matches both expressions:
       cmd_argv.extend(opt.revision)
     cmd_argv.append('--')
 
+    git_failed = False
     bad_rev = False
     have_match = False
 
     for project in projects:
-      p = GitCommand(project,
-                     cmd_argv,
-                     bare = False,
-                     capture_stdout = True,
-                     capture_stderr = True)
+      try:
+        p = GitCommand(project,
+                       cmd_argv,
+                       bare=False,
+                       capture_stdout=True,
+                       capture_stderr=True)
+      except GitError as e:
+        git_failed = True
+        out.project('--- project %s ---' % project.relpath)
+        out.nl()
+        out.fail('%s', str(e))
+        out.nl()
+        continue
+
       if p.Wait() != 0:
         # no results
         #
@@ -203,7 +217,7 @@ contain a line that matches both expressions:
           else:
             out.project('--- project %s ---' % project.relpath)
             out.nl()
-            out.write("%s", p.stderr)
+            out.fail('%s', p.stderr.strip())
             out.nl()
         continue
       have_match = True
@@ -232,7 +246,9 @@ contain a line that matches both expressions:
         for line in r:
           print(line)
 
-    if have_match:
+    if git_failed:
+      sys.exit(1)
+    elif have_match:
       sys.exit(0)
     elif have_rev and bad_rev:
       for r in opt.revision:

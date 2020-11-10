@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2009 The Android Open Source Project
 #
@@ -14,13 +15,17 @@
 # limitations under the License.
 
 import os
-from trace import Trace
+from repo_trace import Trace
+import platform_utils
 
-HEAD    = 'HEAD'
+HEAD = 'HEAD'
+R_CHANGES = 'refs/changes/'
 R_HEADS = 'refs/heads/'
-R_TAGS  = 'refs/tags/'
-R_PUB   = 'refs/published/'
-R_M     = 'refs/remotes/m/'
+R_TAGS = 'refs/tags/'
+R_PUB = 'refs/published/'
+R_WORKTREE = 'refs/worktree/'
+R_WORKTREE_M = R_WORKTREE + 'm/'
+R_M = 'refs/remotes/m/'
 
 
 class GitRefs(object):
@@ -126,9 +131,9 @@ class GitRefs(object):
 
   def _ReadLoose(self, prefix):
     base = os.path.join(self._gitdir, prefix)
-    for name in os.listdir(base):
+    for name in platform_utils.listdir(base):
       p = os.path.join(base, name)
-      if os.path.isdir(p):
+      if platform_utils.isdir(p):
         self._mtime[prefix] = os.path.getmtime(base)
         self._ReadLoose(prefix + name + '/')
       elif name.endswith('.lock'):
@@ -138,18 +143,11 @@ class GitRefs(object):
 
   def _ReadLoose1(self, path, name):
     try:
-      fd = open(path, 'rb')
-    except IOError:
-      return
-
-    try:
-      try:
+      with open(path) as fd:
         mtime = os.path.getmtime(path)
         ref_id = fd.readline()
-      except (IOError, OSError):
-        return
-    finally:
-      fd.close()
+    except (IOError, OSError):
+      return
 
     try:
       ref_id = ref_id.decode()

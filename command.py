@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -19,6 +20,7 @@ import platform
 import re
 import sys
 
+from event_log import EventLog
 from error import NoSuchProjectError
 from error import InvalidProjectGroupsError
 
@@ -28,6 +30,7 @@ class Command(object):
   """
 
   common = False
+  event_log = EventLog()
   manifest = None
   _optparse = None
 
@@ -63,7 +66,8 @@ class Command(object):
         usage = self.helpUsage.strip().replace('%prog', me)
       except AttributeError:
         usage = 'repo %s' % self.NAME
-      self._optparse = optparse.OptionParser(usage=usage)
+      epilog = 'Run `repo help %s` to view the detailed manual.' % self.NAME
+      self._optparse = optparse.OptionParser(usage=usage, epilog=epilog)
       self._Options(self._optparse)
     return self._optparse
 
@@ -95,6 +99,16 @@ class Command(object):
     self.OptionParser.print_usage()
     sys.exit(1)
 
+  def ValidateOptions(self, opt, args):
+    """Validate the user options & arguments before executing.
+
+    This is meant to help break the code up into logical steps.  Some tips:
+    * Use self.OptionParser.error to display CLI related errors.
+    * Adjust opt member defaults as makes sense.
+    * Adjust the args list, but do so inplace so the caller sees updates.
+    * Try to avoid updating self state.  Leave that to Execute.
+    """
+
   def Execute(self, opt, args):
     """Perform the action, after option parsing is complete.
     """
@@ -110,9 +124,9 @@ class Command(object):
     project = None
     if os.path.exists(path):
       oldpath = None
-      while path and \
-            path != oldpath and \
-            path != manifest.topdir:
+      while (path and
+             path != oldpath and
+             path != manifest.topdir):
         try:
           project = self._by_path[path]
           break
@@ -162,7 +176,10 @@ class Command(object):
       self._ResetPathToProjectMap(all_projects_list)
 
       for arg in args:
-        projects = manifest.GetProjectsWithName(arg)
+        # We have to filter by manifest groups in case the requested project is
+        # checked out multiple times or differently based on them.
+        projects = [project for project in manifest.GetProjectsWithName(arg)
+                    if project.MatchesGroups(groups)]
 
         if not projects:
           path = os.path.abspath(arg).replace('\\', '/')
@@ -187,7 +204,7 @@ class Command(object):
 
         for project in projects:
           if not missing_ok and not project.Exists:
-            raise NoSuchProjectError(arg)
+            raise NoSuchProjectError('%s (%s)' % (arg, project.relpath))
           if not project.MatchesGroups(groups):
             raise InvalidProjectGroupsError(arg)
 
@@ -216,15 +233,11 @@ class Command(object):
     return result
 
 
-# pylint: disable=W0223
-# Pylint warns that the `InteractiveCommand` and `PagedCommand` classes do not
-# override method `Execute` which is abstract in `Command`.  Since that method
-# is always implemented in classes derived from `InteractiveCommand` and
-# `PagedCommand`, this warning can be suppressed.
 class InteractiveCommand(Command):
   """Command which requires user interaction on the tty and
      must not run within a pager, even if the user asks to.
   """
+
   def WantPager(self, _opt):
     return False
 
@@ -233,10 +246,9 @@ class PagedCommand(Command):
   """Command which defaults to output in a pager, as its
      display tends to be larger than one screen full.
   """
+
   def WantPager(self, _opt):
     return True
-
-# pylint: enable=W0223
 
 
 class MirrorSafeCommand(object):

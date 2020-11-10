@@ -1,8 +1,10 @@
+[TOC]
+
 # Short Version
 
  - Make small logical changes.
  - Provide a meaningful commit message.
- - Check for coding errors and style nits with pyflakes and flake8
+ - Check for coding errors and style nits with flake8.
  - Make sure all code is under the Apache License, 2.0.
  - Publish your changes for review.
  - Make corrections if requested.
@@ -36,32 +38,68 @@ If your description starts to get too long, that's a sign that you
 probably need to split up your commit to finer grained pieces.
 
 
-## Check for coding errors and style nits with pyflakes and flake8
+## Check for coding errors and style violations with flake8
 
-### Coding errors
-
-Run `pyflakes` on changed modules:
-
-    pyflakes file.py
-
-Ideally there should be no new errors or warnings introduced.
-
-### Style violations
-
-Run `flake8` on changes modules:
+Run `flake8` on changed modules:
 
     flake8 file.py
 
-Note that repo generally follows [Google's python style guide]
-(https://google.github.io/styleguide/pyguide.html) rather than [PEP 8]
-(https://www.python.org/dev/peps/pep-0008/), so it's possible that
-the output of `flake8` will be quite noisy. It's not mandatory to
-avoid all warnings, but at least the maximum line length should be
-followed.
+Note that repo generally follows [Google's Python Style Guide] rather than
+[PEP 8], with a couple of notable exceptions:
 
-If there are many occurrences of the same warning that cannot be
-avoided without going against the Google style guide, these may be
-suppressed in the included `.flake8` file.
+* Indentation is at 2 columns rather than 4
+* The maximum line length is 100 columns rather than 80
+
+There should be no new errors or warnings introduced.
+
+Warnings that cannot be avoided without going against the Google Style Guide
+may be suppressed inline individally using a `# noqa` comment as described
+in the [flake8 documentation].
+
+If there are many occurrences of the same warning, these may be suppressed for
+the entire project in the included `.flake8` file.
+
+[Google's Python Style Guide]: https://google.github.io/styleguide/pyguide.html
+[PEP 8]: https://www.python.org/dev/peps/pep-0008/
+[flake8 documentation]: https://flake8.pycqa.org/en/3.1.1/user/ignoring-errors.html#in-line-ignoring-errors
+
+## Running tests
+
+We use [pytest](https://pytest.org/) and [tox](https://tox.readthedocs.io/) for
+running tests.  You should make sure to install those first.
+
+To run the full suite against all supported Python versions, simply execute:
+```sh
+$ tox -p auto
+```
+
+We have [`./run_tests`](./run_tests) which is a simple wrapper around `pytest`:
+```sh
+# Run the full suite against the default Python version.
+$ ./run_tests
+# List each test as it runs.
+$ ./run_tests -v
+
+# Run a specific unittest module (and all tests in it).
+$ ./run_tests tests/test_git_command.py
+
+# Run a specific testsuite in a specific unittest module.
+$ ./run_tests tests/test_editor.py::EditString
+
+# Run a single test.
+$ ./run_tests tests/test_editor.py::EditString::test_cat_editor
+
+# List all available tests.
+$ ./run_tests --collect-only
+
+# Run a single test using substring match.
+$ ./run_tests -k test_cat_editor
+```
+
+The coverage isn't great currently, but it should still be run for all commits.
+Adding more unittests for changes you make would be greatly appreciated :).
+Check out the [tests/](./tests/) subdirectory for more details.
+
 
 ## Check the license
 

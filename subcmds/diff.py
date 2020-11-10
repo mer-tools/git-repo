@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -15,6 +16,7 @@
 
 from command import PagedCommand
 
+
 class Diff(PagedCommand):
   common = True
   helpSummary = "Show changes between commit and working tree"
@@ -27,14 +29,13 @@ to the Unix 'patch' command.
 """
 
   def _Options(self, p):
-    def cmd(option, opt_str, value, parser):
-      setattr(parser.values, option.dest, list(parser.rargs))
-      while parser.rargs:
-        del parser.rargs[0]
     p.add_option('-u', '--absolute',
                  dest='absolute', action='store_true',
                  help='Paths are relative to the repository root')
 
   def Execute(self, opt, args):
+    ret = 0
     for project in self.GetProjects(args):
-      project.PrintWorkTreeDiff(opt.absolute)
+      if not project.PrintWorkTreeDiff(opt.absolute):
+        ret = 1
+    return ret

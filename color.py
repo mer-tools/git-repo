@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -82,6 +83,7 @@ def _Color(fg=None, bg=None, attr=None):
   else:
     code = ''
   return code
+
 
 DEFAULT = None
 

@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2009 The Android Open Source Project
 #
@@ -21,6 +22,7 @@ from command import Command, MirrorSafeCommand
 from subcmds.sync import _PostRepoUpgrade
 from subcmds.sync import _PostRepoFetch
 
+
 class Selfupdate(Command, MirrorSafeCommand):
   common = False
   helpSummary = "Update repo to the latest version"
@@ -38,7 +40,7 @@ need to be performed by an end-user.
   def _Options(self, p):
     g = p.add_option_group('repo Version options')
     g.add_option('--no-repo-verify',
-                 dest='no_repo_verify', action='store_true',
+                 dest='repo_verify', default=True, action='store_false',
                  help='do not verify repo source code')
     g.add_option('--repo-upgraded',
                  dest='repo_upgraded', action='store_true',
@@ -58,5 +60,5 @@ need to be performed by an end-user.
 
       rp.bare_git.gc('--auto')
       _PostRepoFetch(rp,
-                     no_repo_verify = opt.no_repo_verify,
-                     verbose = True)
+                     repo_verify=opt.repo_verify,
+                     verbose=True)

@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2009 The Android Open Source Project
 #
@@ -18,6 +19,7 @@ import sys
 from command import Command
 from progress import Progress
 
+
 class Checkout(Command):
   common = True
   helpSummary = "Checkout a branch for development"
@@ -33,10 +35,11 @@ The command is equivalent to:
   repo forall [<project>...] -c git checkout <branchname>
 """
 
-  def Execute(self, opt, args):
+  def ValidateOptions(self, opt, args):
     if not args:
       self.Usage()
 
+  def Execute(self, opt, args):
     nb = args[0]
     err = []
     success = []

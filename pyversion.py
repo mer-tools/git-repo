@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2013 The Android Open Source Project
 #
@@ -14,6 +15,7 @@
 # limitations under the License.
 
 import sys
+
 
 def is_python3():
   return sys.version_info[0] == 3

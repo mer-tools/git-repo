@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2011 The Android Open Source Project
 #
@@ -14,9 +15,9 @@
 # limitations under the License.
 
 from __future__ import print_function
-import sys
 
 from command import Command, MirrorSafeCommand
+
 
 class List(Command, MirrorSafeCommand):
   common = True
@@ -48,6 +49,10 @@ This is similar to running: repo forall -c 'echo "$REPO_PATH : $REPO_PROJECT"'.
                  dest='path_only', action='store_true',
                  help="Display only the path of the repository")
 
+  def ValidateOptions(self, opt, args):
+    if opt.fullpath and opt.name_only:
+      self.OptionParser.error('cannot combine -f and -n')
+
   def Execute(self, opt, args):
     """List all projects and the associated directories.
 
@@ -59,11 +64,6 @@ This is similar to running: repo forall -c 'echo "$REPO_PATH : $REPO_PROJECT"'.
       opt: The options.
       args: Positional args.  Can be a list of projects to list, or empty.
     """
-
-    if opt.fullpath and opt.name_only:
-      print('error: cannot combine -f and -n', file=sys.stderr)
-      sys.exit(1)
-
     if not opt.regex:
       projects = self.GetProjects(args, groups=opt.groups)
     else:
@@ -77,7 +77,7 @@ This is similar to running: repo forall -c 'echo "$REPO_PATH : $REPO_PROJECT"'.
     lines = []
     for project in projects:
       if opt.name_only and not opt.path_only:
-        lines.append("%s" % ( project.name))
+        lines.append("%s" % (project.name))
       elif opt.path_only and not opt.name_only:
         lines.append("%s" % (_getpath(project)))
       else:

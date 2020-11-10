@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2014 The Android Open Source Project
 #
@@ -17,9 +18,11 @@ from color import Coloring
 from command import PagedCommand
 from manifest_xml import XmlManifest
 
+
 class _Coloring(Coloring):
   def __init__(self, config):
     Coloring.__init__(self, config, "status")
+
 
 class Diffmanifests(PagedCommand):
   """ A command to see logs in projects represented by manifests
@@ -76,7 +79,7 @@ synced and their revisions won't be found.
                  metavar='<FORMAT>',
                  help='print the log using a custom git pretty format string')
 
-  def _printRawDiff(self, diff):
+  def _printRawDiff(self, diff, pretty_format=None):
     for project in diff['added']:
       self.printText("A %s %s" % (project.relpath, project.revisionExpr))
       self.out.nl()
@@ -89,7 +92,7 @@ synced and their revisions won't be found.
       self.printText("C %s %s %s" % (project.relpath, project.revisionExpr,
                                      otherProject.revisionExpr))
       self.out.nl()
-      self._printLogs(project, otherProject, raw=True, color=False)
+      self._printLogs(project, otherProject, raw=True, color=False, pretty_format=pretty_format)
 
     for project, otherProject in diff['unreachable']:
       self.printText("U %s %s %s" % (project.relpath, project.revisionExpr,
@@ -175,30 +178,31 @@ synced and their revisions won't be found.
             self.printText(log)
             self.out.nl()
 
-  def Execute(self, opt, args):
+  def ValidateOptions(self, opt, args):
     if not args or len(args) > 2:
-      self.Usage()
+      self.OptionParser.error('missing manifests to diff')
 
+  def Execute(self, opt, args):
     self.out = _Coloring(self.manifest.globalConfig)
     self.printText = self.out.nofmt_printer('text')
     if opt.color:
-      self.printProject = self.out.nofmt_printer('project', attr = 'bold')
-      self.printAdded = self.out.nofmt_printer('green', fg = 'green', attr = 'bold')
-      self.printRemoved = self.out.nofmt_printer('red', fg = 'red', attr = 'bold')
-      self.printRevision = self.out.nofmt_printer('revision', fg = 'yellow')
+      self.printProject = self.out.nofmt_printer('project', attr='bold')
+      self.printAdded = self.out.nofmt_printer('green', fg='green', attr='bold')
+      self.printRemoved = self.out.nofmt_printer('red', fg='red', attr='bold')
+      self.printRevision = self.out.nofmt_printer('revision', fg='yellow')
     else:
       self.printProject = self.printAdded = self.printRemoved = self.printRevision = self.printText
 
     manifest1 = XmlManifest(self.manifest.repodir)
-    manifest1.Override(args[0])
+    manifest1.Override(args[0], load_local_manifests=False)
     if len(args) == 1:
       manifest2 = self.manifest
     else:
       manifest2 = XmlManifest(self.manifest.repodir)
-      manifest2.Override(args[1])
+      manifest2.Override(args[1], load_local_manifests=False)
 
     diff = manifest1.projectsDiff(manifest2)
     if opt.raw:
-      self._printRawDiff(diff)
+      self._printRawDiff(diff, pretty_format=opt.pretty_format)
     else:
       self._printDiff(diff, color=opt.color, pretty_format=opt.pretty_format)

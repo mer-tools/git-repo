@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -15,23 +16,22 @@
 
 from __future__ import print_function
 import errno
-import fcntl
 import multiprocessing
 import re
 import os
-import select
 import signal
 import sys
 import subprocess
 
 from color import Coloring
 from command import Command, MirrorSafeCommand
+import platform_utils
 
 _CAN_COLOR = [
-  'branch',
-  'diff',
-  'grep',
-  'log',
+    'branch',
+    'diff',
+    'grep',
+    'log',
 ]
 
 
@@ -54,8 +54,7 @@ Executes the same shell command in each project.
 The -r option allows running the command only on projects matching
 regex or wildcard expression.
 
-Output Formatting
------------------
+# Output Formatting
 
 The -p option causes '%prog' to bind pipes to the command's stdin,
 stdout and stderr streams, and pipe all output into a continuous
@@ -72,8 +71,7 @@ command produces output only on stderr.  Normally the -p option
 causes command output to be suppressed until the command produces
 at least one byte of output on stdout.
 
-Environment
------------
+# Environment
 
 pwd is the project's working directory.  If the current client is
 a mirror client, then pwd is the Git repository.
@@ -105,6 +103,13 @@ annotating tree details.
 shell positional arguments ($1, $2, .., $#) are set to any arguments
 following <command>.
 
+Example: to list projects:
+
+  %prog -c 'echo $REPO_PROJECT'
+
+Notice that $REPO_PROJECT is quoted to ensure it is expanded in
+the context of running <command> instead of in the calling shell.
+
 Unless -p is used, stdin, stdout, stderr are inherited from the
 terminal and are not redirected.
 
@@ -122,7 +127,8 @@ without iterating through the remaining projects.
                  help="Execute the command only on projects matching regex or wildcard expression")
     p.add_option('-i', '--inverse-regex',
                  dest='inverse_regex', action='store_true',
-                 help="Execute the command only on projects not matching regex or wildcard expression")
+                 help="Execute the command only on projects not matching regex or "
+                      "wildcard expression")
     p.add_option('-g', '--groups',
                  dest='groups',
                  help="Execute the command only on projects matching the specified groups")
@@ -134,6 +140,9 @@ without iterating through the remaining projects.
     p.add_option('-e', '--abort-on-errors',
                  dest='abort_on_errors', action='store_true',
                  help='Abort if a command exits unsuccessfully')
+    p.add_option('--ignore-missing', action='store_true',
+                 help='Silently skip & do not exit non-zero due missing '
+                      'checkouts')
 
     g = p.add_option_group('Output')
     g.add_option('-p',
@@ -162,20 +171,23 @@ without iterating through the remaining projects.
     else:
       lrev = None
     return {
-      'name': project.name,
-      'relpath': project.relpath,
-      'remote_name': project.remote.name,
-      'lrev': lrev,
-      'rrev': project.revisionExpr,
-      'annotations': dict((a.name, a.value) for a in project.annotations),
-      'gitdir': project.gitdir,
-      'worktree': project.worktree,
+        'name': project.name,
+        'relpath': project.relpath,
+        'remote_name': project.remote.name,
+        'lrev': lrev,
+        'rrev': project.revisionExpr,
+        'annotations': dict((a.name, a.value) for a in project.annotations),
+        'gitdir': project.gitdir,
+        'worktree': project.worktree,
+        'upstream': project.upstream,
+        'dest_branch': project.dest_branch,
     }
 
-  def Execute(self, opt, args):
+  def ValidateOptions(self, opt, args):
     if not opt.command:
       self.Usage()
 
+  def Execute(self, opt, args):
     cmd = [opt.command[0]]
 
     shell = True
@@ -186,9 +198,9 @@ without iterating through the remaining projects.
       cmd.append(cmd[0])
     cmd.extend(opt.command[1:])
 
-    if  opt.project_header \
-    and not shell \
-    and cmd[0] == 'git':
+    if opt.project_header \
+            and not shell \
+            and cmd[0] == 'git':
       # If this is a direct git command that can enable colorized
       # output and the user prefers coloring, add --color into the
       # command line because we are going to wrap the command into
@@ -199,21 +211,19 @@ without iterating through the remaining projects.
           break
       else:
         cn = None
-      # pylint: disable=W0631
       if cn and cn in _CAN_COLOR:
         class ColorCmd(Coloring):
           def __init__(self, config, cmd):
             Coloring.__init__(self, config, cmd)
         if ColorCmd(self.manifest.manifestProject.config, cn).is_on:
           cmd.insert(cmd.index(cn) + 1, '--color')
-      # pylint: enable=W0631
 
     mirror = self.manifest.IsMirror
     rc = 0
 
     smart_sync_manifest_name = "smart_sync_override.xml"
     smart_sync_manifest_path = os.path.join(
-      self.manifest.manifestProject.worktree, smart_sync_manifest_name)
+        self.manifest.manifestProject.worktree, smart_sync_manifest_name)
 
     if os.path.isfile(smart_sync_manifest_path):
       self.manifest.Override(smart_sync_manifest_path)
@@ -231,8 +241,8 @@ without iterating through the remaining projects.
     try:
       config = self.manifest.manifestProject.config
       results_it = pool.imap(
-         DoWorkWrapper,
-         self.ProjectArgs(projects, mirror, opt, cmd, shell, config))
+          DoWorkWrapper,
+          self.ProjectArgs(projects, mirror, opt, cmd, shell, config))
       pool.close()
       for r in results_it:
         rc = rc or r
@@ -246,7 +256,7 @@ without iterating through the remaining projects.
     except Exception as e:
       # Catch any other exceptions raised
       print('Got an error, terminating the pool: %s: %s' %
-              (type(e).__name__, e),
+            (type(e).__name__, e),
             file=sys.stderr)
       pool.terminate()
       rc = rc or getattr(e, 'errno', 1)
@@ -261,7 +271,7 @@ without iterating through the remaining projects.
         project = self._SerializeProject(p)
       except Exception as e:
         print('Project list error on project %s: %s: %s' %
-                (p.name, type(e).__name__, e),
+              (p.name, type(e).__name__, e),
               file=sys.stderr)
         return
       except KeyboardInterrupt:
@@ -270,6 +280,7 @@ without iterating through the remaining projects.
         return
       yield [mirror, opt, cmd, shell, cnt, config, project]
 
+
 class WorkerKeyboardInterrupt(Exception):
   """ Keyboard interrupt exception for worker processes. """
   pass
@@ -277,6 +288,7 @@ class WorkerKeyboardInterrupt(Exception):
 
 def InitWorker():
   signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 
 def DoWorkWrapper(args):
   """ A wrapper around the DoWork() method.
@@ -296,11 +308,10 @@ def DoWorkWrapper(args):
 
 def DoWork(project, mirror, opt, cmd, shell, cnt, config):
   env = os.environ.copy()
+
   def setenv(name, val):
     if val is None:
       val = ''
-    if hasattr(val, 'encode'):
-      val = val.encode()
     env[name] = val
 
   setenv('REPO_PROJECT', project['name'])
@@ -308,6 +319,8 @@ def DoWork(project, mirror, opt, cmd, shell, cnt, config):
   setenv('REPO_REMOTE', project['remote_name'])
   setenv('REPO_LREV', project['lrev'])
   setenv('REPO_RREV', project['rrev'])
+  setenv('REPO_UPSTREAM', project['upstream'])
+  setenv('REPO_DEST_BRANCH', project['dest_branch'])
   setenv('REPO_I', str(cnt + 1))
   for name in project['annotations']:
     setenv("REPO__%s" % (name), project['annotations'][name])
@@ -319,10 +332,14 @@ def DoWork(project, mirror, opt, cmd, shell, cnt, config):
     cwd = project['worktree']
 
   if not os.path.exists(cwd):
-    if (opt.project_header and opt.verbose) \
-    or not opt.project_header:
+    # Allow the user to silently ignore missing checkouts so they can run on
+    # partial checkouts (good for infra recovery tools).
+    if opt.ignore_missing:
+      return 0
+    if ((opt.project_header and opt.verbose)
+            or not opt.project_header):
       print('skipping %s/' % project['relpath'], file=sys.stderr)
-    return
+    return 1
 
   if opt.project_header:
     stdin = subprocess.PIPE
@@ -344,35 +361,25 @@ def DoWork(project, mirror, opt, cmd, shell, cnt, config):
   if opt.project_header:
     out = ForallColoring(config)
     out.redirect(sys.stdout)
-    class sfd(object):
-      def __init__(self, fd, dest):
-        self.fd = fd
-        self.dest = dest
-      def fileno(self):
-        return self.fd.fileno()
-
     empty = True
     errbuf = ''
 
     p.stdin.close()
-    s_in = [sfd(p.stdout, sys.stdout),
-            sfd(p.stderr, sys.stderr)]
+    s_in = platform_utils.FileDescriptorStreams.create()
+    s_in.add(p.stdout, sys.stdout, 'stdout')
+    s_in.add(p.stderr, sys.stderr, 'stderr')
 
-    for s in s_in:
-      flags = fcntl.fcntl(s.fd, fcntl.F_GETFL)
-      fcntl.fcntl(s.fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-    while s_in:
-      in_ready, _out_ready, _err_ready = select.select(s_in, [], [])
+    while not s_in.is_done:
+      in_ready = s_in.select()
       for s in in_ready:
-        buf = s.fd.read(4096)
+        buf = s.read().decode()
         if not buf:
-          s.fd.close()
           s_in.remove(s)
+          s.close()
           continue
 
         if not opt.verbose:
-          if s.fd != p.stdout:
+          if s.std_name == 'stderr':
             errbuf += buf
             continue
 

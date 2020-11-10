@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2015 The Android Open Source Project
 #
@@ -28,11 +29,14 @@ from error import ManifestParseError
 
 NUM_BATCH_RETRIEVE_REVISIONID = 32
 
+
 def get_gitc_manifest_dir():
   return wrapper.Wrapper().get_gitc_manifest_dir()
 
+
 def parse_clientdir(gitc_fs_path):
   return wrapper.Wrapper().gitc_parse_clientdir(gitc_fs_path)
+
 
 def _set_project_revisions(projects):
   """Sets the revisionExpr for a list of projects.
@@ -51,16 +55,17 @@ def _set_project_revisions(projects):
                                        project.remote.url,
                                        project.revisionExpr],
                                       capture_stdout=True, cwd='/tmp'))
-      for project in projects if not git_config.IsId(project.revisionExpr)]
+                     for project in projects if not git_config.IsId(project.revisionExpr)]
   for proj, gitcmd in project_gitcmds:
     if gitcmd.Wait():
       print('FATAL: Failed to retrieve revisionExpr for %s' % proj)
       sys.exit(1)
     revisionExpr = gitcmd.stdout.split('\t')[0]
     if not revisionExpr:
-      raise(ManifestParseError('Invalid SHA-1 revision project %s (%s)' %
-                               (proj.remote.url, proj.revisionExpr)))
+      raise ManifestParseError('Invalid SHA-1 revision project %s (%s)' %
+                               (proj.remote.url, proj.revisionExpr))
     proj.revisionExpr = revisionExpr
+
 
 def _manifest_groups(manifest):
   """Returns the manifest group string that should be synced
@@ -76,6 +81,7 @@ def _manifest_groups(manifest):
     groups = 'default,platform-' + platform.system().lower()
   return groups
 
+
 def generate_gitc_manifest(gitc_manifest, manifest, paths=None):
   """Generate a manifest for shafsd to use for this GITC client.
 
@@ -87,7 +93,7 @@ def generate_gitc_manifest(gitc_manifest, manifest, paths=None):
   print('Generating GITC Manifest by fetching revision SHAs for each '
         'project.')
   if paths is None:
-    paths = manifest.paths.keys()
+    paths = list(manifest.paths.keys())
 
   groups = [x for x in re.split(r'[,\s]+', _manifest_groups(manifest)) if x]
 
@@ -96,18 +102,18 @@ def generate_gitc_manifest(gitc_manifest, manifest, paths=None):
   projects = [p for p in projects if p.MatchesGroups(groups)]
 
   if gitc_manifest is not None:
-    for path, proj in manifest.paths.iteritems():
+    for path, proj in manifest.paths.items():
       if not proj.MatchesGroups(groups):
         continue
 
       if not proj.upstream and not git_config.IsId(proj.revisionExpr):
         proj.upstream = proj.revisionExpr
 
-      if not path in gitc_manifest.paths:
+      if path not in gitc_manifest.paths:
         # Any new projects need their first revision, even if we weren't asked
         # for them.
         projects.append(proj)
-      elif not path in paths:
+      elif path not in paths:
         # And copy revisions from the previous manifest if we're not updating
         # them now.
         gitc_proj = gitc_manifest.paths[path]
@@ -120,11 +126,11 @@ def generate_gitc_manifest(gitc_manifest, manifest, paths=None):
   index = 0
   while index < len(projects):
     _set_project_revisions(
-        projects[index:(index+NUM_BATCH_RETRIEVE_REVISIONID)])
+        projects[index:(index + NUM_BATCH_RETRIEVE_REVISIONID)])
     index += NUM_BATCH_RETRIEVE_REVISIONID
 
   if gitc_manifest is not None:
-    for path, proj in gitc_manifest.paths.iteritems():
+    for path, proj in gitc_manifest.paths.items():
       if proj.old_revision and path in paths:
         # If we updated a project that has been started, keep the old-revision
         # updated.
@@ -133,11 +139,12 @@ def generate_gitc_manifest(gitc_manifest, manifest, paths=None):
         repo_proj.revisionExpr = None
 
   # Convert URLs from relative to absolute.
-  for _name, remote in manifest.remotes.iteritems():
+  for _name, remote in manifest.remotes.items():
     remote.fetchUrl = remote.resolvedFetchUrl
 
   # Save the manifest.
   save_manifest(manifest)
+
 
 def save_manifest(manifest, client_dir=None):
   """Save the manifest file in the client_dir.

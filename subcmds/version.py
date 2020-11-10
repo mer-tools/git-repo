@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2009 The Android Open Source Project
 #
@@ -14,10 +15,14 @@
 # limitations under the License.
 
 from __future__ import print_function
+
+import platform
 import sys
+
 from command import Command, MirrorSafeCommand
-from git_command import git
+from git_command import git, RepoSourceVersion, user_agent
 from git_refs import HEAD
+
 
 class Version(Command, MirrorSafeCommand):
   wrapper_version = None
@@ -33,12 +38,29 @@ class Version(Command, MirrorSafeCommand):
     rp = self.manifest.repoProject
     rem = rp.GetRemote(rp.remote.name)
 
-    print('repo version %s' % rp.work_git.describe(HEAD))
+    # These might not be the same.  Report them both.
+    src_ver = RepoSourceVersion()
+    rp_ver = rp.bare_git.describe(HEAD)
+    print('repo version %s' % rp_ver)
     print('       (from %s)' % rem.url)
+    print('       (%s)' % rp.bare_git.log('-1', '--format=%cD', HEAD))
 
-    if Version.wrapper_path is not None:
-      print('repo launcher version %s' % Version.wrapper_version)
-      print('       (from %s)' % Version.wrapper_path)
+    if self.wrapper_path is not None:
+      print('repo launcher version %s' % self.wrapper_version)
+      print('       (from %s)' % self.wrapper_path)
 
-    print(git.version().strip())
+      if src_ver != rp_ver:
+        print('       (currently at %s)' % src_ver)
+
+    print('repo User-Agent %s' % user_agent.repo)
+    print('git %s' % git.version_tuple().full)
+    print('git User-Agent %s' % user_agent.git)
     print('Python %s' % sys.version)
+    uname = platform.uname()
+    if sys.version_info.major < 3:
+      # Python 3 returns a named tuple, but Python 2 is simpler.
+      print(uname)
+    else:
+      print('OS %s %s (%s)' % (uname.system, uname.release, uname.version))
+      print('CPU %s (%s)' %
+            (uname.machine, uname.processor if uname.processor else 'unknown'))

@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2010 The Android Open Source Project
 #
@@ -21,6 +22,7 @@ from git_command import GitCommand
 
 CHANGE_ID_RE = re.compile(r'^\s*Change-Id: I([0-9a-f]{40})\s*$')
 
+
 class CherryPick(Command):
   common = True
   helpSummary = "Cherry-pick a change."
@@ -36,16 +38,17 @@ change id will be added.
   def _Options(self, p):
     pass
 
-  def Execute(self, opt, args):
+  def ValidateOptions(self, opt, args):
     if len(args) != 1:
       self.Usage()
 
+  def Execute(self, opt, args):
     reference = args[0]
 
     p = GitCommand(None,
                    ['rev-parse', '--verify', reference],
-                   capture_stdout = True,
-                   capture_stderr = True)
+                   capture_stdout=True,
+                   capture_stderr=True)
     if p.Wait() != 0:
       print(p.stderr, file=sys.stderr)
       sys.exit(1)
@@ -59,8 +62,8 @@ change id will be added.
 
     p = GitCommand(None,
                    ['cherry-pick', sha1],
-                   capture_stdout = True,
-                   capture_stderr = True)
+                   capture_stdout=True,
+                   capture_stderr=True)
     status = p.Wait()
 
     print(p.stdout, file=sys.stdout)
@@ -72,9 +75,9 @@ change id will be added.
       new_msg = self._Reformat(old_msg, sha1)
 
       p = GitCommand(None, ['commit', '--amend', '-F', '-'],
-                     provide_stdin = True,
-                     capture_stdout = True,
-                     capture_stderr = True)
+                     provide_stdin=True,
+                     capture_stdout=True,
+                     capture_stderr=True)
       p.stdin.write(new_msg)
       p.stdin.close()
       if p.Wait() != 0:
@@ -95,7 +98,7 @@ change id will be added.
 
   def _StripHeader(self, commit_msg):
     lines = commit_msg.splitlines()
-    return "\n".join(lines[lines.index("")+1:])
+    return "\n".join(lines[lines.index("") + 1:])
 
   def _Reformat(self, old_msg, sha1):
     new_msg = []

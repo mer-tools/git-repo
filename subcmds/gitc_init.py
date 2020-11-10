@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2015 The Android Open Source Project
 #
@@ -49,7 +50,7 @@ use for this GITC client.
 """
 
   def _Options(self, p):
-    super(GitcInit, self)._Options(p)
+    super(GitcInit, self)._Options(p, gitc_init=True)
     g = p.add_option_group('GITC options')
     g.add_option('-f', '--manifest-file',
                  dest='manifest_file',
@@ -61,7 +62,8 @@ use for this GITC client.
   def Execute(self, opt, args):
     gitc_client = gitc_utils.parse_clientdir(os.getcwd())
     if not gitc_client or (opt.gitc_client and gitc_client != opt.gitc_client):
-      print('fatal: Please update your repo command. See go/gitc for instructions.', file=sys.stderr)
+      print('fatal: Please update your repo command. See go/gitc for instructions.',
+            file=sys.stderr)
       sys.exit(1)
     self.client_dir = os.path.join(gitc_utils.get_gitc_manifest_dir(),
                                    gitc_client)

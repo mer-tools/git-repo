@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -22,21 +23,27 @@ from error import GitError
 
 CHANGE_RE = re.compile(r'^([1-9][0-9]*)(?:[/\.-]([1-9][0-9]*))?$')
 
+
 class Download(Command):
   common = True
   helpSummary = "Download and checkout a change"
   helpUsage = """
-%prog {project change[/patchset]}...
+%prog {[project] change[/patchset]}...
 """
   helpDescription = """
 The '%prog' command downloads a change from the review system and
 makes it available in your project's local working directory.
+If no project is specified try to use current directory as a project.
 """
 
   def _Options(self, p):
+    p.add_option('-b', '--branch',
+                 help='create a new branch first')
     p.add_option('-c', '--cherry-pick',
                  dest='cherrypick', action='store_true',
                  help="cherry-pick instead of checkout")
+    p.add_option('-x', '--record-origin', action='store_true',
+                 help='pass -x when cherry-picking')
     p.add_option('-r', '--revert',
                  dest='revert', action='store_true',
                  help="revert instead of checkout")
@@ -55,16 +62,33 @@ makes it available in your project's local working directory.
       m = CHANGE_RE.match(a)
       if m:
         if not project:
-          self.Usage()
+          project = self.GetProjects(".")[0]
         chg_id = int(m.group(1))
         if m.group(2):
           ps_id = int(m.group(2))
         else:
           ps_id = 1
+          refs = 'refs/changes/%2.2d/%d/' % (chg_id % 100, chg_id)
+          output = project._LsRemote(refs + '*')
+          if output:
+            regex = refs + r'(\d+)'
+            rcomp = re.compile(regex, re.I)
+            for line in output.splitlines():
+              match = rcomp.search(line)
+              if match:
+                ps_id = max(int(match.group(1)), ps_id)
         to_get.append((project, chg_id, ps_id))
       else:
         project = self.GetProjects([a])[0]
     return to_get
+
+  def ValidateOptions(self, opt, args):
+    if opt.record_origin:
+      if not opt.cherrypick:
+        self.OptionParser.error('-x only makes sense with --cherry-pick')
+
+      if opt.ffonly:
+        self.OptionParser.error('-x and --ff are mutually exclusive options')
 
   def Execute(self, opt, args):
     for project, change_id, ps_id in self._ParseChangeIds(args):
@@ -82,22 +106,41 @@ makes it available in your project's local working directory.
         continue
 
       if len(dl.commits) > 1:
-        print('[%s] %d/%d depends on %d unmerged changes:' \
+        print('[%s] %d/%d depends on %d unmerged changes:'
               % (project.name, change_id, ps_id, len(dl.commits)),
               file=sys.stderr)
         for c in dl.commits:
           print('  %s' % (c), file=sys.stderr)
-      if opt.cherrypick:
-        try:
-          project._CherryPick(dl.commit)
-        except GitError:
-          print('[%s] Could not complete the cherry-pick of %s' \
-                % (project.name, dl.commit), file=sys.stderr)
-          sys.exit(1)
 
+      if opt.cherrypick:
+        mode = 'cherry-pick'
       elif opt.revert:
-        project._Revert(dl.commit)
+        mode = 'revert'
       elif opt.ffonly:
-        project._FastForward(dl.commit, ffonly=True)
+        mode = 'fast-forward merge'
       else:
-        project._Checkout(dl.commit)
+        mode = 'checkout'
+
+      # We'll combine the branch+checkout operation, but all the rest need a
+      # dedicated branch start.
+      if opt.branch and mode != 'checkout':
+        project.StartBranch(opt.branch)
+
+      try:
+        if opt.cherrypick:
+          project._CherryPick(dl.commit, ffonly=opt.ffonly,
+                              record_origin=opt.record_origin)
+        elif opt.revert:
+          project._Revert(dl.commit)
+        elif opt.ffonly:
+          project._FastForward(dl.commit, ffonly=True)
+        else:
+          if opt.branch:
+            project.StartBranch(opt.branch, revision=dl.commit)
+          else:
+            project._Checkout(dl.commit)
+
+      except GitError:
+        print('[%s] Could not complete the %s of %s'
+              % (project.name, mode, dl.commit), file=sys.stderr)
+        sys.exit(1)
